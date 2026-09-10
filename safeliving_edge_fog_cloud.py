@@ -101,6 +101,14 @@ class DispositivoResidencial:
             valor = round(random.uniform(0.3, 2.5), 2)
         elif self.tipo == "fechadura_biometrica":
             valor = random.choice([ "reconhecida", "nao_reconhecida"])
+        elif self.tipo == "sensor_fumaca_gas":
+            valor = 1 if random.random() < 0.15 else 0     # 15% de chance de fumaça/gás
+        elif self.tipo == "painel_solar":
+            valor = round(random.uniform(0.0, 4.2), 2)     # geração fotovoltaica em kW
+        elif self.tipo == "sensor_umidade_solo":
+            valor = round(random.uniform(15.0, 80.0), 1)   # umidade do solo em porcentagem (%)
+        elif self.tipo == "termostato_comodo":
+            valor = round(random.uniform(18.0, 35.0), 1)   # temperatura do ambiente em °C
         else:
             valor = None
 
@@ -135,21 +143,46 @@ class CasaInteligente:
         placa = leituras["camera_garagem"]["valor"]
         presenca = leituras["sensor_presenca_garagem"]["valor"]
         biometria = leituras["fechadura_biometrica"]["valor"]
+        fumaca = leituras["sensor_fumaca_gas"]["valor"]
+        solar = leituras["painel_solar"]["valor"]
+        umidade = leituras["sensor_umidade_solo"]["valor"]
+        temperatura = leituras["termostato_comodo"]["valor"]
 
         if placa and presenca == 1:
             print(f"    [CASA #{self.casa_numero}] AÇÃO AUTÔNOMA (ms): fusão câmera+presença "
                   f"confirma veículo na zona de entrada -> liga refletores e abre o portão.")
-            return "ACESSO_VEICULO_AUTORIZADO", placa
+            tipo_retorno = "ACESSO_VEICULO_AUTORIZADO"
+            placa_retorno = placa
+        else:
+            tipo_retorno = None
+            placa_retorno = None
 
         if presenca == 1 and not placa:
             print(f"    [CASA #{self.casa_numero}] presença detectada, mas sem placa "
                   f"confirmada -> portão permanece fechado (fusão evita ação incorreta).")
         
         if biometria == "reconhecida":
-            print(f"[CASA #{self.casa_numero}] TENTATIVA_ACESSO_AUTORIZADA")
+            print(f"    [CASA #{self.casa_numero}] TENTATIVA_ACESSO_AUTORIZADA")
         else:
-            print(f"[CASA #{self.casa_numero}] TENTATIVA_ACESSO_NEGADA")
-        return None, None
+            print(f"    [CASA #{self.casa_numero}] TENTATIVA_ACESSO_NEGADA")
+
+        if fumaca == 1:
+            print(f"    [CASA #{self.casa_numero}] AÇÃO AUTÔNOMA CRÍTICA (ms): Fumaça/gás detectado! "
+                  f"Fecha registro de gás, liga exaustor e dispara alarme local.")
+
+        if solar > 3.0:
+            print(f"    [CASA #{self.casa_numero}] AÇÃO AUTÔNOMA: Alta geração solar. "
+                  f"Direcionando excedente para bateria residencial.")
+
+        if umidade < 22.0:
+            print(f"    [CASA #{self.casa_numero}] AÇÃO AUTÔNOMA: Solo seco. "
+                  f"Acionando bombas de irrigação do jardim.")
+
+        if temperatura > 29.0:
+            print(f"    [CASA #{self.casa_numero}] AÇÃO AUTÔNOMA: Temperatura elevada. "
+                  f"Ajustando ar-condicionado.")
+
+        return tipo_retorno, placa_retorno
     # ------------------------------------------------------------------------------------------
 
     # ---------------- REGRA DE ABSTRAÇÃO NA CASA (EDGE) ----------------
@@ -184,7 +217,26 @@ class CasaInteligente:
         if random.random() < 0.3:  # telemetria de energia é enviada só ocasionalmente
             time.sleep(LATENCIA_CASA_PARA_5G_SEG)
             eventos.append(self.abstrair_telemetria(leituras["medidor_energia"]))
-        # --------------------------------------------------------------------------
+            
+        # Transmissão de emergência 
+        if leituras["sensor_fumaca_gas"]["valor"] == 1:
+            time.sleep(LATENCIA_CASA_PARA_5G_SEG)
+            eventos.append({
+                "tipo_evento": "ALERTA_INCENDIO",
+                "casa_numero": self.casa_numero,
+                "hora": leituras["sensor_fumaca_gas"]["hora"]
+            })
+            
+        # Transmissão periódica da geração solar para a Cloud
+        solar = leituras["painel_solar"]["valor"]
+        if solar > 0 and random.random() < 0.3:
+            time.sleep(LATENCIA_CASA_PARA_5G_SEG)
+            eventos.append({
+                "tipo_evento": "TELEMETRIA_SOLAR",
+                "casa_numero": self.casa_numero,
+                "valor_kw": solar,
+                "hora": leituras["painel_solar"]["hora"]
+            })
         return eventos
 
     # ---------------- A CLOUD PODE ATUALIZAR O SOFTWARE DESTE GATEWAY ----------------
@@ -198,16 +250,10 @@ class CasaInteligente:
 # ======================================================================
 # CAMADA 2 — FOG: SERVIDOR DE BORDA NA ANTENA OPENRAN DO BAIRRO
 # ======================================================================
+# ======================================================================
+# CAMADA 2 — FOG: SERVIDOR DE BORDA NA ANTENA OPENRAN DO BAIRRO
+# ======================================================================
 class EstacaoORAN:
-    """
-    TRANSMISSÃO: correlaciona em lote antes de escalar à Cloud.
-    PROCESSAMENTO: confirma o acesso com o sensor de trânsito público do
-                   quarteirão; se confirmado, aplica Network Slicing e
-                   aciona a iluminação pública do trajeto.
-    ABSTRAÇÃO: entrega à Cloud um evento consolidado do bairro, não os
-               pacotes brutos recebidos de cada casa.
-    """
-
     def __init__(self, bairro_id, casas_atendidas):
         self.bairro_id = bairro_id
         self.casas_atendidas = casas_atendidas
@@ -217,21 +263,18 @@ class EstacaoORAN:
     def receber(self, eventos_da_casa):
         self.buffer.extend(eventos_da_casa)
 
-    # ---------------- AÇÕES DA FOG QUANDO O ACESSO É CONFIRMADO ----------------
     def aplicar_slicing_rede(self, bairro_id):
-        print(f"    [FOG {bairro_id}] Network Slicing acionado: canal de comunicação "
-              f"da quadra priorizado na OpenRAN.")
+        print(f"    [FOG {bairro_id}] Network Slicing acionado: canal de comunicação priorizado na OpenRAN.")
 
     def acionar_iluminacao_publica(self, bairro_id):
-        print(f"    [FOG {bairro_id}] painéis de iluminação pública acionados ao "
-              f"longo do trajeto até a garagem.")
-    # --------------------------------------------------------------------------------
+        print(f"    [FOG {bairro_id}] painéis de iluminação pública acionados ao longo do trajeto.")
 
-    # ---------------- REGRA DE PROCESSAMENTO NA FOG (xApp / Near-RT RIC) ----------------
     def xapp_processar_lote(self, ciclo_atual):
         acessos_validados = []
         acessos_nao_confirmados = []
         eventos_energia = 0
+        eventos_solar = 0
+        casas_em_chamas = []
 
         for e in self.buffer:
             if e["tipo_evento"] == "ACESSO_VEICULO_AUTORIZADO":
@@ -240,49 +283,51 @@ class EstacaoORAN:
                 alvo.append({"casa_numero": e["casa_numero"], "placa": e["placa"]})
             elif e["tipo_evento"] == "TELEMETRIA_ENERGIA":
                 eventos_energia += 1
+            elif e["tipo_evento"] == "TELEMETRIA_SOLAR":
+                eventos_solar += 1
+            elif e["tipo_evento"] == "ALERTA_INCENDIO":
+                casas_em_chamas.append(e["casa_numero"])
 
-        if acessos_validados:
+        if casas_em_chamas:
+            status = "EMERGENCIA_INCENDIO"
+        elif acessos_validados:
             status = "ACESSO_VALIDADO_REGIONALMENTE"
             self.aplicar_slicing_rede(self.bairro_id)
             self.acionar_iluminacao_publica(self.bairro_id)
         elif acessos_nao_confirmados:
             status = "ACESSO_NAO_CONFIRMADO"
-        elif eventos_energia:
+        elif eventos_energia > 0 or eventos_solar > 0:
             status = "TELEMETRIA_ROTINA"
         else:
             status = "NORMAL"
 
-        return status, acessos_validados, acessos_nao_confirmados, eventos_energia
-    # ------------------------------------------------------------------------------------------
+        return status, acessos_validados, acessos_nao_confirmados, eventos_energia, eventos_solar, casas_em_chamas
 
-    # ---------------- REGRA DE ABSTRAÇÃO NA FOG (Near-RT RIC -> Cloud) ----------------
-    def abstrair(self, status, validados, nao_confirmados, eventos_energia):
+    def abstrair(self, status, validados, nao_confirmados, energia, solar, chamas):
         return {
             "bairro_id": self.bairro_id,
             "status_bloco": status,
             "acessos_validados": validados,
             "acessos_nao_confirmados": nao_confirmados,
-            "eventos_energia": eventos_energia,
+            "eventos_energia": energia,
+            "eventos_solar": solar,
+            "casas_em_chamas": chamas,
             "hora": datetime.now().strftime("%H:%M:%S"),
         }
-    # ------------------------------------------------------------------------------------------
 
     def ciclo(self, ciclo_atual):
         if not self.buffer:
             return None
         time.sleep(LATENCIA_RAN_PARA_CLOUD_SEG)
-        status, validados, nao_confirmados, energia = self.xapp_processar_lote(ciclo_atual)
-        relatorio = self.abstrair(status, validados, nao_confirmados, energia)
+        status, validados, nao_confirmados, energia, solar, chamas = self.xapp_processar_lote(ciclo_atual)
+        relatorio = self.abstrair(status, validados, nao_confirmados, energia, solar, chamas)
         print(f"  [FOG {self.bairro_id}] lote processado -> status_bloco={status}")
         self.buffer = []
         return relatorio
 
-    # ---------------- A CLOUD PODE ATUALIZAR O SOFTWARE DESTE NÓ DE FOG ----------------
     def receber_atualizacao_software(self, nova_versao):
         self.versao_software = nova_versao
-        print(f"    [FOG {self.bairro_id}] nó de borda atualizado para a versão "
-              f"{nova_versao:.1f} do modelo de visão computacional.")
-    # ------------------------------------------------------------------------------------------
+        print(f"    [FOG {self.bairro_id}] nó de borda atualizado para a versão {nova_versao:.1f}.")
 
 
 # ======================================================================
@@ -308,10 +353,19 @@ class NucleoCentral:
 
     def registrar(self, relatorio_fog):
         self.historico.append(relatorio_fog)
-        print(f"  [CLOUD] evento consolidado registrado na base de dados temporal "
-              f"(bairro {relatorio_fog['bairro_id']}, status {relatorio_fog['status_bloco']})")
+        print(f"  [CLOUD] evento consolidado registrado (bairro {relatorio_fog['bairro_id']}, status {relatorio_fog['status_bloco']})")
 
-        # ---------------- REGRA DE PROCESSAMENTO NA CLOUD (integrações de alto nível) ----------------
+        # ---------------- REGRA DE PROCESSAMENTO NA CLOUD ----------------
+        
+        if relatorio_fog["status_bloco"] == "EMERGENCIA_INCENDIO":
+            for casa in relatorio_fog["casas_em_chamas"]:
+                print(f"  [CLOUD] ALERTA CRÍTICO! Casa #{casa} reportou incêndio.")
+                print(f"  [CLOUD] Acionando Corpo de Bombeiros local e enviando SMS para a família.")
+
+        if relatorio_fog["eventos_solar"] > 0:
+            print(f"  [CLOUD] Processando relatórios de geração solar no bairro {relatorio_fog['bairro_id']} "
+                  f"para cálculo global de créditos de carbono.")
+
         for acesso in relatorio_fog["acessos_validados"]:
             casa = acesso["casa_numero"]
             print(f"  [CLOUD] notificação push enviada ao smartphone do morador da Casa #{casa}")
@@ -571,7 +625,16 @@ class NucleoCentral:
 # MONTAGEM DA SIMULAÇÃO
 # ======================================================================
 def montar_ambiente():
-    tipos = ["camera_garagem", "sensor_presenca_garagem", "medidor_energia", "fechadura_biometrica"]
+    tipos = [
+        "camera_garagem", 
+        "sensor_presenca_garagem", 
+        "medidor_energia", 
+        "fechadura_biometrica",
+        "sensor_fumaca_gas",
+        "painel_solar",
+        "sensor_umidade_solo",
+        "termostato_comodo"
+    ]
 
     def criar_casa(numero, bairro_id):
         dispositivos = [DispositivoResidencial(f"D{numero}{t}", t, casa_numero=numero) for t in tipos]
@@ -612,7 +675,6 @@ def rodar_simulacao():
 
 if __name__ == "__main__":
     rodar_simulacao()
-
 
 # ======================================================================
 # SUGESTÕES DE MUDANÇAS PARA OS ALUNOS FAZEREM EM SALA
