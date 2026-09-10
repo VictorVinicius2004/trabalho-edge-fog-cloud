@@ -109,6 +109,10 @@ class DispositivoResidencial:
             valor = round(random.uniform(15.0, 80.0), 1)   # umidade do solo em porcentagem (%)
         elif self.tipo == "termostato_comodo":
             valor = round(random.uniform(18.0, 35.0), 1)   # temperatura do ambiente em °C
+        elif self.tipo == "camera_facial":
+            valor = random.choice(["reconhecido","nao_reconhecido"])
+        elif self.tipo == "sensor_janela":
+            valor = "quebrada" if random.random() < 0.02 else "normal"
         else:
             valor = None
 
@@ -147,15 +151,13 @@ class CasaInteligente:
         solar = leituras["painel_solar"]["valor"]
         umidade = leituras["sensor_umidade_solo"]["valor"]
         temperatura = leituras["termostato_comodo"]["valor"]
+        face = leituras["camera_facial"]["valor"]
+        janela = leituras["sensor_janela"]["valor"]
 
         if placa and presenca == 1:
             print(f"    [CASA #{self.casa_numero}] AÇÃO AUTÔNOMA (ms): fusão câmera+presença "
                   f"confirma veículo na zona de entrada -> liga refletores e abre o portão.")
-            tipo_retorno = "ACESSO_VEICULO_AUTORIZADO"
-            placa_retorno = placa
-        else:
-            tipo_retorno = None
-            placa_retorno = None
+            return "ACESSO_VEICULO_AUTORIZADO", placa
 
         if presenca == 1 and not placa:
             print(f"    [CASA #{self.casa_numero}] presença detectada, mas sem placa "
@@ -182,7 +184,18 @@ class CasaInteligente:
             print(f"    [CASA #{self.casa_numero}] AÇÃO AUTÔNOMA: Temperatura elevada. "
                   f"Ajustando ar-condicionado.")
 
-        return tipo_retorno, placa_retorno
+        if face == "reconhecido":
+            print(f"    [CASA #{self.casa_numero}] AÇÃO AUTÔNOMA: rosto reconhecido "
+                  f"-> libera fechadura da porta principal.")
+
+        if face == "nao_reconhecido":
+            print(f"    [CASA #{self.casa_numero}] AÇÃO AUTÔNOMA: presença desconhecida")
+
+        if face == "nao_reconhecido" and janela == "quebrada":
+            print(f"    [CASA #{self.casa_numero}] ALERTA CRÍTICO (ms): janela quebrada por"
+                  f" indivíduo não reconhecido -> aciona alarme, tranca todas as fechaduras ")
+
+        return None, None
     # ------------------------------------------------------------------------------------------
 
     # ---------------- REGRA DE ABSTRAÇÃO NA CASA (EDGE) ----------------
@@ -237,6 +250,15 @@ class CasaInteligente:
                 "valor_kw": solar,
                 "hora": leituras["painel_solar"]["hora"]
             })
+
+        if leituras["camera_facial"]["valor"] == "nao_reconhecido" and leituras["sensor_janela"]["valor"] == "quebrada":
+            time.sleep(LATENCIA_CASA_PARA_5G_SEG)
+            eventos.append({
+                "tipo_evento": "ALERTA_INVASÃO",
+                "casa_numero": self.casa_numero,
+                "hora": leituras["sensor_janela"]["hora"]
+            })
+
         return eventos
 
     # ---------------- A CLOUD PODE ATUALIZAR O SOFTWARE DESTE GATEWAY ----------------
@@ -247,9 +269,6 @@ class CasaInteligente:
     # ------------------------------------------------------------------------------------------
 
 
-# ======================================================================
-# CAMADA 2 — FOG: SERVIDOR DE BORDA NA ANTENA OPENRAN DO BAIRRO
-# ======================================================================
 # ======================================================================
 # CAMADA 2 — FOG: SERVIDOR DE BORDA NA ANTENA OPENRAN DO BAIRRO
 # ======================================================================
@@ -626,14 +645,16 @@ class NucleoCentral:
 # ======================================================================
 def montar_ambiente():
     tipos = [
-        "camera_garagem", 
-        "sensor_presenca_garagem", 
-        "medidor_energia", 
+        "camera_garagem",
+        "sensor_presenca_garagem",
+        "medidor_energia",
         "fechadura_biometrica",
         "sensor_fumaca_gas",
         "painel_solar",
         "sensor_umidade_solo",
-        "termostato_comodo"
+        "termostato_comodo",
+        "sensor_facial",
+        "sensor_janela",
     ]
 
     def criar_casa(numero, bairro_id):
