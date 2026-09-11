@@ -67,7 +67,7 @@ SCRIPT_CHEGADAS = [
 PLACAS_CONFIRMADAS_TRANSITO_PUBLICO = {
     (bairro, placa, ciclo)
     for (casa, bairro, ciclo, placa) in SCRIPT_CHEGADAS
-    #if casa != 88
+    if casa != 88
 }
 
 NOME_ARQUIVO_DASHBOARD = "dashboard_safeliving.html"
@@ -653,7 +653,7 @@ def montar_ambiente():
         "painel_solar",
         "sensor_umidade_solo",
         "termostato_comodo",
-        "sensor_facial",
+        "camera_facial",
         "sensor_janela",
     ]
 
