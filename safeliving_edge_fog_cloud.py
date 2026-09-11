@@ -112,7 +112,7 @@ class DispositivoResidencial:
         elif self.tipo == "camera_facial":
             valor = random.choice(["reconhecido","nao_reconhecido"])
         elif self.tipo == "sensor_janela":
-            valor = "quebrada" if random.random() < 0.02 else "normal"
+            valor = "quebrada" if random.random() < 0.05 else "normal"
         else:
             valor = None
 
@@ -164,9 +164,9 @@ class CasaInteligente:
                   f"confirmada -> portão permanece fechado (fusão evita ação incorreta).")
         
         if biometria == "reconhecida":
-            print(f"    [CASA #{self.casa_numero}] TENTATIVA_ACESSO_AUTORIZADA")
+            print(f"    [CASA #{self.casa_numero}]: Biometria reconhecida TENTATIVA_ACESSO_AUTORIZADA")
         else:
-            print(f"    [CASA #{self.casa_numero}] TENTATIVA_ACESSO_NEGADA")
+            print(f"    [CASA #{self.casa_numero}]: Biometria não reconhecida TENTATIVA_ACESSO_NEGADA")
 
         if fumaca == 1:
             print(f"    [CASA #{self.casa_numero}] AÇÃO AUTÔNOMA CRÍTICA (ms): Fumaça/gás detectado! "

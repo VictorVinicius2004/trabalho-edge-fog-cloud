@@ -13,12 +13,15 @@
 - **O que gera:**  `1`(fumaça/gás detectado) com 15% de chance, ou `0`
 - **O que faz na decisão:** se detectado, simula uma ação crítica autônoma —
   fechar o registro de gás, ligar o exaustor e disparar o alarme local.
+- Envia ao fog `ALERTA_INCENDIO`para tratamento no cloud.
+- O cloud processa`EMERGENCIA_INCENDIO`e chama o corpo de bombeiros, além de enviar SMS aos contatos de emergência. 
 
 ### 2. Painel solar (`painel_solar`)
 
 - **O que gera:** valor de geração entre 0.0 e 4.2 kW
 - **O que faz na decisão:** se a geração ultrapassa 3.0 kW, direciona o
   excedente para a bateria residencial.
+- Tem 30% de chance de enviar `TELEMETRIA_ROTINA`para cálculo global de créditos de carbono.
 
 ### 3. Sensor de umidade do solo (`sensor_umidade_solo`)
 
@@ -39,5 +42,5 @@
 
 ### 6. Sensor de janela (`sensor_janela`)
 
-- **O que gera:** `"quebrada"` (2% de chance) ou `"normal"`
+- **O que gera:** `"quebrada"` (5% de chance) ou `"normal"`
 - **O que faz na decisão:** combinado com a câmera facial, se uma pessoa não identificada quebrar a janela, aciona o alerta de invasão.
